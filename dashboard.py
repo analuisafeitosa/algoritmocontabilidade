@@ -3,8 +3,8 @@ from dash import dcc, html
 import pandas as pd
 import sqlite3
 import plotly.express as px
-from algoritmo import db_path
 
+# Função para calcular as métricas, incluindo Lucro Bruto e Lucro Líquido
 def calcular_metrics(db_path):
     # Conectar ao banco de dados SQLite
     conn = sqlite3.connect(db_path)
@@ -33,16 +33,25 @@ def calcular_metrics(db_path):
     '''
     custo_por_contrato = pd.read_sql_query(query_custo_por_contrato, conn)
 
+    # 4. Calcular Lucro Bruto e Lucro Líquido
+    lucro_bruto = receita_bruta_mensal['Receita_Bruta'].sum() - despesa_mensal['Despesa'].sum()
+    lucro_liquido = lucro_bruto  # Aqui você pode subtrair outras despesas se tiver os dados
+
     # Fechar a conexão com o banco de dados
     conn.close()
 
-    return receita_bruta_mensal, despesa_mensal, custo_por_contrato
+    return receita_bruta_mensal, despesa_mensal, custo_por_contrato, lucro_bruto, lucro_liquido
 
 # Caminho para o banco de dados SQLite
 db_path = r'C:\Users\analu\OneDrive\Área de Trabalho\algoritmo de contabilidade\algoritmocontabilidade\movimentacao_bancaria.db'
 
 # Calcular as métricas
-receita_bruta, despesa_mensal, custo_por_contrato = calcular_metrics(db_path)
+receita_bruta, despesa_mensal, custo_por_contrato, lucro_bruto, lucro_liquido = calcular_metrics(db_path)
+
+# Filtrando os dados para mostrar apenas valores maiores que 0 nos gráficos de barra
+receita_bruta = receita_bruta[receita_bruta['Receita_Bruta'] > 0]
+despesa_mensal = despesa_mensal[despesa_mensal['Despesa'] > 0]
+custo_por_contrato = custo_por_contrato[custo_por_contrato['Custo_Por_Contrato'] > 0]
 
 # Criar a aplicação Dash
 app = dash.Dash(__name__)
@@ -77,9 +86,27 @@ pie_fig = px.pie(
     names='Nome Natureza', 
     values='Custo_Por_Contrato',
     title="Distribuição do Custo por Contrato",
-    hole=0.3  # Fazer o gráfico de pizza com um "buraco" no centro (estilo donut)
+    hole=0.2  # Fazer o gráfico de pizza com um "buraco" no centro (estilo donut)
 )
 
+def update_graphs(ordenar_por, ordem):
+    # Ordenar os dados conforme a escolha do usuário
+    if ordenar_por == 'Receita_Bruta':
+        df_receita = receita_bruta
+        df_receita = df_receita.sort_values(by='Receita_Bruta', ascending=(ordem == 'asc'))
+        fig_receita = px.bar(df_receita, x='Mes', y='Receita_Bruta', title="Receita Bruta Mensal")
+    
+    elif ordenar_por == 'Despesa':
+        df_despesa = despesa_mensal
+        df_despesa = df_despesa.sort_values(by='Despesa', ascending=(ordem == 'asc'))
+        fig_despesa = px.bar(df_despesa, x='Mes', y='Despesa', title="Despesa Mensal")
+    
+    else:
+        df_custo = custo_por_contrato
+        df_custo = df_custo.sort_values(by='Custo_Por_Contrato', ascending=(ordem == 'asc'))
+        fig_custo = px.bar(df_custo, x='Nome Natureza', y='Custo_Por_Contrato', title="Custo por Contrato de Clientes")
+
+    return fig_receita, fig_despesa, fig_custo
 # Ajustar o tamanho da fonte
 pie_fig.update_traces(textinfo="percent+label", pull=[0.1]*len(significant_categories))
 
@@ -90,6 +117,7 @@ app.layout = html.Div([
         'font-family': 'Arial, sans-serif', 
         'color': '#333'
     }),
+
 
     # Gráfico de Receita Bruta Mensal
     dcc.Graph(
